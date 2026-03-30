@@ -314,37 +314,18 @@ function fmtTime(){
   return new Date().toLocaleTimeString('en-US',{hour12:false});
 }
 
-// Build a lookup map: stripped lowercase ID → asset
-var idMap={};
-ASSETS.forEach(function(a){
-  var stripped=a.id.replace(/^0x/i,'').toLowerCase();
-  idMap[stripped]=a;
-});
-
-// ═══ FETCH ALL — match by feed ID ═══
+// ═══ FETCH ALL — one request per token (proven method) ═══
 async function fetchAll(){
-  try{
-    var batch1=ASSETS.slice(0,9);
-    var batch2=ASSETS.slice(9);
-
-    var results=[];
-
-    async function fetchBatch(batch){
-      var url='https://hermes.pyth.network/v2/updates/price/latest?'
-        +batch.map(function(a){return'ids[]='+a.id;}).join('&')+'&parsed=true';
-      var r=await fetch(url,{signal:AbortSignal.timeout(8000)});
+  var promises=ASSETS.map(async function(a){
+    try{
+      var r=await fetch(
+        'https://hermes.pyth.network/v2/updates/price/latest?ids[]='+a.id+'&parsed=true',
+        {signal:AbortSignal.timeout(6000)}
+      );
       if(!r.ok)return;
       var d=await r.json();
-      if(d.parsed)results=results.concat(d.parsed);
-    }
-
-    await Promise.all([fetchBatch(batch1),fetchBatch(batch2)]);
-
-    results.forEach(function(item){
-      // Normalize: strip 0x, lowercase
-      var itemId=(item.id||'').replace(/^0x/i,'').toLowerCase();
-      var a=idMap[itemId];
-      if(!a)return;
+      if(!d.parsed||!d.parsed[0])return;
+      var item=d.parsed[0];
       var p=item.price.price*Math.pow(10,item.price.expo);
       if(!p||isNaN(p)||p<=0)return;
       var s=state[a.sym];
@@ -357,12 +338,12 @@ async function fetchAll(){
       if(s.low===Infinity||p<s.low)s.low=p;
       s.chgPct=(p-s.openPrice)/s.openPrice*100;
       s.updates++;
-    });
-
-    fetchCount++;
-    renderAll();
-    document.getElementById('lastUpdate').textContent=fmtTime();
-  }catch(e){console.error('Fetch error:',e);}
+    }catch(e){}
+  });
+  await Promise.all(promises);
+  fetchCount++;
+  renderAll();
+  document.getElementById('lastUpdate').textContent=fmtTime();
 }
 
 // ═══ RENDER ALL ═══
