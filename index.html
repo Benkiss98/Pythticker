@@ -314,19 +314,33 @@ function fmtTime(){
   return new Date().toLocaleTimeString('en-US',{hour12:false});
 }
 
-// ═══ FETCH ALL ═══
+// ═══ FETCH ALL — match by feed ID ═══
 async function fetchAll(){
-  var ids=ASSETS.map(function(a){return'ids[]='+a.id;}).join('&');
   try{
-    var r=await fetch('https://hermes.pyth.network/v2/updates/price/latest?'+ids+'&parsed=true',
-      {signal:AbortSignal.timeout(6000)});
-    if(!r.ok)return;
-    var d=await r.json();
-    if(!d.parsed)return;
-    d.parsed.forEach(function(item,i){
-      var a=ASSETS[i];
+    // Split into 2 batches to avoid URL length issues
+    var batch1=ASSETS.slice(0,9);
+    var batch2=ASSETS.slice(9);
+
+    var [r1,r2]=await Promise.all([
+      fetch('https://hermes.pyth.network/v2/updates/price/latest?'
+        +batch1.map(function(a){return'ids[]='+a.id;}).join('&')+'&parsed=true',
+        {signal:AbortSignal.timeout(8000)}),
+      fetch('https://hermes.pyth.network/v2/updates/price/latest?'
+        +batch2.map(function(a){return'ids[]='+a.id;}).join('&')+'&parsed=true',
+        {signal:AbortSignal.timeout(8000)})
+    ]);
+
+    var parsed=[];
+    if(r1.ok){var d1=await r1.json();if(d1.parsed)parsed=parsed.concat(d1.parsed);}
+    if(r2.ok){var d2=await r2.json();if(d2.parsed)parsed=parsed.concat(d2.parsed);}
+
+    // Match each result by feed ID
+    parsed.forEach(function(item){
+      var feedId='0x'+item.id;
+      var a=ASSETS.find(function(x){return x.id.toLowerCase()===feedId.toLowerCase();});
       if(!a)return;
       var p=item.price.price*Math.pow(10,item.price.expo);
+      if(!p||isNaN(p)||p<=0)return;
       var s=state[a.sym];
       s.prevPrice=s.price||p;
       s.price=p;
@@ -334,14 +348,15 @@ async function fetchAll(){
       s.history.push(p);
       if(s.history.length>40)s.history.shift();
       if(p>s.high)s.high=p;
-      if(p<s.low)s.low=p;
+      if(s.low===Infinity||p<s.low)s.low=p;
       s.chgPct=(p-s.openPrice)/s.openPrice*100;
       s.updates++;
     });
+
     fetchCount++;
     renderAll();
     document.getElementById('lastUpdate').textContent=fmtTime();
-  }catch(e){}
+  }catch(e){console.error('Fetch error:',e);}
 }
 
 // ═══ RENDER ALL ═══
