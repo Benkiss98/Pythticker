@@ -172,8 +172,7 @@ font-family:var(–mono);letter-spacing:1.5px;text-transform:uppercase;
 border-top:1px solid var(–border)}
 
 /* STAGGERED LOAD */
-.token-card{opacity:0;transform:translateY(8px);animation:fadeUp .3s forwards}
-@keyframes fadeUp{to{opacity:1;transform:translateY(0)}}
+.token-card{opacity:1;transform:translateY(0)}
 </style>
 
 </head>
@@ -417,11 +416,10 @@ function renderFcChart(s){
 // ═══ TOKEN GRID ═══
 function renderGrid(){
   var grid=document.getElementById('tokenGrid');
-  // Only build DOM once, update after
-  if(grid.children.length===0){
-    grid.innerHTML=ASSETS.map(function(a,i){
-      return'<div class="token-card" id="tc-'+a.sym+'" onclick="selectAsset(\''+a.sym+'\')" '
-        +'style="animation-delay:'+(i*0.05)+'s">'
+  // Build DOM if empty
+  if(!grid.children.length){
+    grid.innerHTML=ASSETS.map(function(a){
+      return'<div class="token-card" id="tc-'+a.sym+'" onclick="selectAsset(\''+a.sym+'\')">'
         +'<div class="tc-icon"><img src="'+a.logo+'" onerror="this.style.display=\'none\'"></div>'
         +'<div class="tc-info">'
           +'<div class="tc-sym">'+a.sym+'</div>'
@@ -441,35 +439,30 @@ function renderGrid(){
   ASSETS.forEach(function(a){
     var s=state[a.sym];
     var card=document.getElementById('tc-'+a.sym);
+    if(!card)return;
     var priceEl=document.getElementById('price-'+a.sym);
     var chgEl=document.getElementById('chg-'+a.sym);
+    if(!priceEl||!chgEl)return;
 
-    // Price
-    var newPrice=fmtPrice(s.price,a.sym);
-    if(priceEl.textContent!==newPrice&&s.price>0){
-      var dir=s.price>s.prevPrice?'up':'dn';
-      priceEl.textContent=newPrice;
-      priceEl.style.color=dir==='up'?'var(--up)':'var(--dn)';
-      card.classList.remove('flash-up','flash-dn');
-      void card.offsetWidth;
-      card.classList.add('flash-'+dir);
-      setTimeout(function(){priceEl.style.color='var(--text)';},500);
+    if(s.price>0){
+      var newPrice=fmtPrice(s.price,a.sym);
+      if(priceEl.textContent!==newPrice){
+        var dir=s.price>s.prevPrice?'up':'dn';
+        priceEl.textContent=newPrice;
+        priceEl.style.color=dir==='up'?'var(--up)':'var(--dn)';
+        card.classList.remove('flash-up','flash-dn');
+        void card.offsetWidth;
+        card.classList.add('flash-'+dir);
+        setTimeout(function(){priceEl.style.color='var(--text)';},500);
+      }
+      chgEl.textContent=fmtChg(s.chgPct);
+      chgEl.className='tc-chg '+(s.chgPct>0.001?'up':s.chgPct<-0.001?'dn':'flat');
+      card.classList.remove('up-trend','dn-trend');
+      if(s.chgPct>0)card.classList.add('up-trend');
+      else if(s.chgPct<0)card.classList.add('dn-trend');
     }
 
-    // Change
-    var isUp=s.chgPct>=0;
-    chgEl.textContent=fmtChg(s.chgPct);
-    chgEl.className='tc-chg '+(s.chgPct>0?'up':s.chgPct<0?'dn':'flat');
-
-    // Trend indicator
-    card.classList.remove('up-trend','dn-trend');
-    if(s.chgPct>0)card.classList.add('up-trend');
-    else if(s.chgPct<0)card.classList.add('dn-trend');
-
-    // Selected
     card.classList.toggle('selected',a.sym===selectedSym);
-
-    // Sparkline
     renderSparkline(a.sym,s);
   });
 }
