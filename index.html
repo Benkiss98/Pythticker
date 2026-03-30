@@ -314,30 +314,36 @@ function fmtTime(){
   return new Date().toLocaleTimeString('en-US',{hour12:false});
 }
 
+// Build a lookup map: stripped lowercase ID → asset
+var idMap={};
+ASSETS.forEach(function(a){
+  var stripped=a.id.replace(/^0x/i,'').toLowerCase();
+  idMap[stripped]=a;
+});
+
 // ═══ FETCH ALL — match by feed ID ═══
 async function fetchAll(){
   try{
-    // Split into 2 batches to avoid URL length issues
     var batch1=ASSETS.slice(0,9);
     var batch2=ASSETS.slice(9);
 
-    var [r1,r2]=await Promise.all([
-      fetch('https://hermes.pyth.network/v2/updates/price/latest?'
-        +batch1.map(function(a){return'ids[]='+a.id;}).join('&')+'&parsed=true',
-        {signal:AbortSignal.timeout(8000)}),
-      fetch('https://hermes.pyth.network/v2/updates/price/latest?'
-        +batch2.map(function(a){return'ids[]='+a.id;}).join('&')+'&parsed=true',
-        {signal:AbortSignal.timeout(8000)})
-    ]);
+    var results=[];
 
-    var parsed=[];
-    if(r1.ok){var d1=await r1.json();if(d1.parsed)parsed=parsed.concat(d1.parsed);}
-    if(r2.ok){var d2=await r2.json();if(d2.parsed)parsed=parsed.concat(d2.parsed);}
+    async function fetchBatch(batch){
+      var url='https://hermes.pyth.network/v2/updates/price/latest?'
+        +batch.map(function(a){return'ids[]='+a.id;}).join('&')+'&parsed=true';
+      var r=await fetch(url,{signal:AbortSignal.timeout(8000)});
+      if(!r.ok)return;
+      var d=await r.json();
+      if(d.parsed)results=results.concat(d.parsed);
+    }
 
-    // Match each result by feed ID
-    parsed.forEach(function(item){
-      var feedId='0x'+item.id;
-      var a=ASSETS.find(function(x){return x.id.toLowerCase()===feedId.toLowerCase();});
+    await Promise.all([fetchBatch(batch1),fetchBatch(batch2)]);
+
+    results.forEach(function(item){
+      // Normalize: strip 0x, lowercase
+      var itemId=(item.id||'').replace(/^0x/i,'').toLowerCase();
+      var a=idMap[itemId];
       if(!a)return;
       var p=item.price.price*Math.pow(10,item.price.expo);
       if(!p||isNaN(p)||p<=0)return;
